@@ -28,8 +28,8 @@ env:
   DOTNET_NOLOGO: true 
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   SOLUTION_PATH: "Demarbit.Shared.Domain.slnx"
-  SONAR_PROJECT_KEY: "demarbitbv_shared-domain"       # Update after SonarCloud setup
-  SONAR_ORGANIZATION: "demarbitbv"                     # Update after SonarCloud setup
+  SONAR_PROJECT_KEY: "DemarbitBV_shared-domain"       # Update after SonarCloud setup
+  SONAR_ORGANIZATION: "demarbit-bv"                     # Update after SonarCloud setup
 
 jobs:
   # ==========================================================================
