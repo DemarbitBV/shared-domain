@@ -85,10 +85,8 @@ jobs:
       - name: Determine version
         id: version
         run: |
-          # MinVer resolves the version during build, but we can preview it
-          # by building one project. The actual version is embedded at pack time.
-          VERSION=$(dotnet msbuild src/Demarbit.Shared.Domain/Demarbit.Shared.Domain.csproj \
-            -t:MinVerVersion -nologo -v:m 2>/dev/null | tail -1 | xargs)
+          dotnet tool install --global minver-cli
+          VERSION=$(minver --tag-prefix v)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "📦 Version: $VERSION"
 
@@ -109,7 +107,7 @@ jobs:
             /d:sonar.host.url="https://sonarcloud.io" \
             /d:sonar.cs.opencover.reportsPaths="**/TestResults/**/coverage.opencover.xml" \
             /d:sonar.coverage.exclusions="**/*Tests*/**,**/Program.cs" \
-            /d:sonar.projectVersion="${{ steps.version.outputs.version }}"
+            /v:"${{ steps.version.outputs.version }}"
 
       # ----------------------------------------------------------------------
       # Build
