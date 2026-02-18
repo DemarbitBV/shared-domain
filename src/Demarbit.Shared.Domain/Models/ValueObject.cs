@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Demarbit.Shared.Domain.Models;
 
 /// <summary>
@@ -26,6 +28,8 @@ namespace Demarbit.Shared.Domain.Models;
 /// }
 /// </code>
 /// </example>
+[SuppressMessage("SonarAnalyzer.CSharp", "S4035", 
+    Justification = "Abstract DDD base type — equality is by identity/components and includes type checks.")]
 public abstract class ValueObject : IEquatable<ValueObject>
 {
     /// <summary>

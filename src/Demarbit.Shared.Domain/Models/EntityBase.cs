@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Demarbit.Shared.Domain.Models;
 
 /// <summary>
@@ -5,6 +7,8 @@ namespace Demarbit.Shared.Domain.Models;
 /// Provides identity, audit fields, and value equality by ID.
 /// </summary>
 /// <typeparam name="TId">The identifier type (e.g. Guid, int, or a strongly-typed ID).</typeparam>
+[SuppressMessage("SonarAnalyzer.CSharp", "S4035", 
+    Justification = "Abstract DDD base type — equality is by identity/components and includes type checks.")]
 public abstract class EntityBase<TId> : IEquatable<EntityBase<TId>>
     where TId : notnull, IEquatable<TId>
 {
@@ -59,6 +63,7 @@ public abstract class EntityBase<TId> : IEquatable<EntityBase<TId>>
     {
         if (other is null) return false;
         if (ReferenceEquals(this, other)) return true;
+        if (GetType() != other.GetType()) return false;
         return Id.Equals(other.Id);
     }
 
