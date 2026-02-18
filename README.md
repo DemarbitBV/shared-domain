@@ -2,6 +2,10 @@
 
 Shared domain building blocks for DDD and Clean Architecture in .NET — entities, aggregates, value objects, domain events, and guards.
 
+[![CI/CD](https://github.com/DemarbitBV/shared-domain/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/DemarbitBV/shared-domain/actions/workflows/ci-cd.yml)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=DemarbitBV_shared-domain&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=DemarbitBV_shared-domain)
+[![NuGet](https://img.shields.io/nuget/v/Demarbit.Shared.Domain)](https://www.nuget.org/packages/Demarbit.Shared.Domain)
+
 ## Installation
 
 ```bash
