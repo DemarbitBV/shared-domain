@@ -9,4 +9,10 @@ public interface ICurrentUserProvider
     /// The session's current user's id
     /// </summary>
     Guid? UserId { get; }
+
+    /// <summary>
+    /// Update the current user ID
+    /// </summary>
+    /// <param name="userId"></param>
+    void SetUserId(Guid? userId);
 }
