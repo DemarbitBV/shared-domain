@@ -24,7 +24,7 @@ on:
     branches: [main]
 
 env:
-  DOTNET_VERSION: "9.0.x"
+  DOTNET_VERSION: "10.0.x"
   DOTNET_NOLOGO: true 
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   SOLUTION_PATH: "Demarbit.Shared.Domain.slnx"
@@ -87,8 +87,10 @@ jobs:
         run: |
           dotnet tool install --global minver-cli
           VERSION=$(minver --tag-prefix v)
+          BASE_VERSION=$(echo "$VERSION" | cut -d'-' -f1)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "📦 Version: $VERSION"
+          echo "base_version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "📦 Version: $VERSION (base: $BASE_VERSION)"
 
       # ----------------------------------------------------------------------
       # SonarCloud — Begin Analysis
@@ -108,7 +110,7 @@ jobs:
             /d:sonar.cs.opencover.reportsPaths="**/TestResults/**/coverage.opencover.xml" \
             /d:sonar.coverage.exclusions="**/*Tests*/**,**/Program.cs" \
             /d:sonar.exclusions="**/obj/**,**/bin/**,**/Migrations/**,.github/**" \
-            /v:"${{ steps.version.outputs.version }}"
+            /v:"${{ steps.version.outputs.base_version }}"
 
       # ----------------------------------------------------------------------
       # Build
@@ -200,6 +202,9 @@ jobs:
 
     # Only publish on tagged releases (v*) pushed to main
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+
+    permissions:
+      contents: write
 
     steps:
       - name: Download NuGet package

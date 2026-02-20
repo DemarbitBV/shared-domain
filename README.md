@@ -6,127 +6,229 @@ Shared domain building blocks for DDD and Clean Architecture in .NET — entitie
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=DemarbitBV_shared-domain&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=DemarbitBV_shared-domain)
 [![NuGet](https://img.shields.io/nuget/v/Demarbit.Shared.Domain)](https://www.nuget.org/packages/Demarbit.Shared.Domain)
 
-## Installation
-
-```bash
-dotnet add package Demarbit.Shared.Domain
-```
-
 ## What's Included
 
-**Base types** — `EntityBase<TId>`, `AggregateRoot<TId>`, and `ValueObject` with built-in audit fields (`CreatedAt`, `UpdatedAt`, `CreatedBy`, `UpdatedBy`), domain event support, and proper equality semantics.
+**Dispatching** — A lightweight in-process dispatcher with `ICommand<TResponse>`, `IQuery<TResponse>`, single `IRequestHandler<TRequest, TResponse>`, and domain event notification via `IEventHandler<TEvent>`. No void handler track, no `Unit` type — every request returns a response.
 
-**Domain events** — `IDomainEvent` contract and `DomainEventBase` record with event ID, type name, and timestamp.
+**Pipeline behaviors** — `IPipelineBehavior<TRequest, TResponse>` with built-in logging, transaction, and validation behaviors. Public interface so consumers can add their own (caching, authorization, rate limiting, etc.).
 
-**Contracts** — `IRepository<T, TId>` and `IUnitOfWork` interfaces for dependency inversion. No infrastructure dependencies.
+**Validation** — Async `IValidator<T>` with structured `ValidationError` results (property name, message, error code). Supports database lookups and external service checks.
 
-**Utilities** — `Guard` class for domain preconditions and `StringExtensions.ToSlug()` for slug generation.
+**Exceptions** — Consistent `AppException` hierarchy: `ConflictException`, `ForbiddenException`, `NotFoundException`, and `ValidationFailedException` all extend a single base. One catch filter handles them all.
+
+**Models** — `Optional<T>` for PATCH semantics, `PagedResult<T>` with pagination helpers, `ValidationError`, and `SortDirection`.
 
 ## Quick Start
 
-### Entities and Aggregates
+### Commands and Queries
 
-Every entity has a generic `TId` parameter. Convenience types defaulting to `Guid` are provided for the common case.
+Commands represent intent to change state. Queries represent intent to read. Both return a response — pair with `Demarbit.Results` for a natural fit, or use any type.
 
 ```csharp
-// Using the default Guid ID
-public class Order : AggregateRoot
-{
-    public string CustomerName { get; private set; }
-    public List<OrderLine> Lines { get; private set; } = [];
+// With Demarbit.Results
+public record CreateOrder(string CustomerName) : ICommand<Result>;
+public record GetOrder(Guid Id) : IQuery<Result>;
+public record DeleteOrder(Guid Id) : ICommand;
 
-    public Order(string customerName)
-    {
-        CustomerName = Guard.Against.NullOrWhiteSpace(customerName, nameof(customerName));
-        AddDomainEvent(new OrderCreatedEvent(Id, customerName));
-    }
-}
-
-// Using a strongly-typed ID
-public class Product : AggregateRoot<ProductId>
-{
-    public string Name { get; private set; }
-
-    public Product(ProductId id, string name) : base(id)
-    {
-        Name = name;
-    }
-}
+// Without Results — any return type works
+public record CreateOrder(string CustomerName) : ICommand;
+public record GetOrder(Guid Id) : IQuery;
 ```
 
-### Value Objects
+### Request Handlers
+
+One handler interface for all requests. No separate void handler.
 
 ```csharp
-public class Money : ValueObject
+public class CreateOrderHandler : IRequestHandler>
 {
-    public decimal Amount { get; }
-    public string Currency { get; }
-
-    public Money(decimal amount, string currency)
+    public async Task<Result> HandleAsync(CreateOrder request, CancellationToken ct)
     {
-        Amount = amount;
-        Currency = currency;
-    }
-
-    protected override IEnumerable<object?> GetEqualityComponents()
-    {
-        yield return Amount;
-        yield return Currency;
+        var order = new Order(request.CustomerName);
+        await _repository.AddAsync(order, ct);
+        return Result.Success(order.Id);
     }
 }
 ```
 
-### Domain Events
+### Dispatching
+
+Send commands/queries and notify domain events through `IDispatcher`:
 
 ```csharp
-public record OrderCreatedEvent(Guid OrderId, string CustomerName) : DomainEventBase;
+// Send a command or query
+var result = await dispatcher.SendAsync(new CreateOrder("Acme Corp"), ct);
+
+// Notify domain events after saving
+await dispatcher.NotifyAsync(order.DequeueDomainEvents(), ct);
 ```
 
-Events are collected on the aggregate and can be dequeued by your infrastructure layer after saving:
+### Validation
+
+Validators are async and return structured errors:
 
 ```csharp
-var events = order.DequeueDomainEvents();
+public class CreateOrderValidator : IValidator
+{
+    public async Task<IEnumerable> ValidateAsync(CreateOrder request, CancellationToken ct)
+    {
+        var errors = new List();
+
+        if (string.IsNullOrWhiteSpace(request.CustomerName))
+            errors.Add(new ValidationError(nameof(request.CustomerName), "Customer name is required."));
+
+        if (await _customers.ExistsAsync(request.CustomerName, ct) is false)
+            errors.Add(new ValidationError(nameof(request.CustomerName), "Customer not found.", "CUSTOMER_NOT_FOUND"));
+
+        return errors;
+    }
+}
 ```
 
-### Guards
+The `ValidationBehavior` runs all registered validators before the handler executes and throws `ValidationFailedException` with the collected errors.
 
-```csharp
-Guard.NotNull(customer, nameof(customer));
-Guard.NotNullOrWhiteSpace(name, nameof(name));
-Guard.Between(quantity, 1, 1000, nameof(quantity));
+### Pipeline Behaviors
 
-// With a custom exception
-Guard.Against(() => order.Lines.Count == 0, () => new DomainException("Order must have at least one line."));
+Behaviors wrap every request in a pipeline. Three are included out of the box:
+
+```
+ValidationBehavior  →  LoggingBehavior  →  TransactionBehavior  →  Handler
 ```
 
-### Audit Fields
+- **ValidationBehavior** — runs all `IValidator<TRequest>` implementations, throws `ValidationFailedException` on failure.
+- **LoggingBehavior** — logs request/response timing. Only logs unexpected exceptions (not `AppException` subtypes).
+- **TransactionBehavior** — wraps commands in a `IUnitOfWork.SaveChangesAsync` call. Triggered by the `ITransactional` marker on `ICommand<T>` — no runtime reflection.
 
-Entities expose `CreatedAt`, `UpdatedAt`, `CreatedBy`, and `UpdatedBy`. Update them explicitly for testability:
+Add your own:
 
 ```csharp
-entity.SetCreated(dateTimeProvider.UtcNow, userId);
-entity.SetUpdated(dateTimeProvider.UtcNow, userId);
+public class CachingBehavior : IPipelineBehavior
+    where TRequest : IQuery
+{
+    public async Task HandleAsync(
+        TRequest request,
+        RequestHandlerDelegate next,
+        CancellationToken ct)
+    {
+        var cached = await _cache.GetAsync(request);
+        if (cached is not null) return cached;
+
+        var response = await next();
+        await _cache.SetAsync(request, response);
+        return response;
+    }
+}
+```
+
+### Exceptions
+
+All application exceptions share a single base class:
+
+```csharp
+try { ... }
+catch (AppException ex)
+{
+    // Catches ConflictException, ForbiddenException, NotFoundException,
+    // ValidationFailedException — one filter, no enumeration needed.
+}
+```
+
+`ValidationFailedException` carries structured error details:
+
+```csharp
+catch (ValidationFailedException ex)
+{
+    foreach (var error in ex.Errors)
+    {
+        Console.WriteLine($"{error.PropertyName}: {error.ErrorMessage} ({error.ErrorCode})");
+    }
+}
+```
+
+### Optional for PATCH Semantics
+
+`Optional<T>` distinguishes "field absent" from "field explicitly set to null" in partial updates:
+
+```csharp
+public record UpdateCustomer(
+    Guid Id,
+    Optional Name,        // absent = don't change, Some(value) = update
+    Optional PhoneNumber  // absent = don't change, Some(null) = clear
+) : ICommand;
+```
+
+JSON serialization is handled by the included `OptionalJsonConverterFactory`.
+
+### Event Handlers
+
+Handle domain events dispatched after persistence:
+
+```csharp
+public class OrderCreatedHandler : IEventHandler
+{
+    public async Task HandleAsync(OrderCreatedEvent @event, CancellationToken ct)
+    {
+        await _emailService.SendOrderConfirmationAsync(@event.OrderId, ct);
+    }
+}
+```
+
+Event dispatching uses cached typed invokers — no reflection at runtime.
+
+### Scope Context Propagation
+
+Event handlers run in their own DI scope. To propagate ambient context (user ID, tenant, correlation ID), implement `IScopeContextPropagator`:
+
+```csharp
+public class SessionContextPropagator : IScopeContextPropagator
+{
+    public void PropagateToScope(IServiceProvider sourceScope, IServiceProvider targetScope)
+    {
+        var source = sourceScope.GetRequiredService();
+        var target = targetScope.GetRequiredService();
+        target.UserId = source.UserId;
+        target.TenantId = source.TenantId;
+    }
+}
+```
+
+Register it in DI — the dispatcher picks it up automatically. If none is registered, no propagation occurs.
+
+### Registration
+
+One call wires up the dispatcher, behaviors, and all handlers/validators in the given assemblies:
+
+```csharp
+services.AddSharedApplication(typeof(CreateOrderHandler).Assembly);
 ```
 
 ## Design Principles
 
-This package follows a few deliberate constraints:
-
-- **Zero dependencies** — no EF Core, no ASP.NET, no third-party packages. Pure domain logic only.
-- **Generic ID support** — `EntityBase<TId>` and `AggregateRoot<TId>` accept any `IEquatable<TId>` key type. The non-generic `EntityBase` and `AggregateRoot` default to `Guid` for convenience.
-- **Small surface area** — only types that belong in the domain layer are included. Infrastructure concerns like idempotency tracking, EF Core interceptors, and session context live in separate packages.
+- **Single handler track** — every request returns a response. No `Unit`, no void handlers, no parallel interface hierarchies. This cuts dispatching complexity by ~30%.
+- **Consistent exception base** — all application exceptions extend `AppException`. One catch filter handles all expected failures.
+- **No infrastructure dependencies** — depends only on `Demarbit.Shared.Domain`, `M.E.DependencyInjection.Abstractions`, and `M.E.Logging.Abstractions`. No EF Core, no HTTP, no third-party packages.
+- **Extensible pipeline** — `IPipelineBehavior` is public. Consumers add behaviors without forking the library.
+- **Results-ready, not Results-required** — designed to pair naturally with `Demarbit.Results` but works with any return type.
 
 ## Architecture Fit
 
-This package is the innermost layer in a Clean Architecture setup:
-
 ```
-Demarbit.Shared.Domain          ← this package (zero deps)
-Demarbit.Shared.Application     ← CQRS, Result types, session context
+Demarbit.Shared.Domain          ← zero deps
+    ↑
+Demarbit.Shared.Application     ← this package
+    ↑
 Demarbit.Shared.Infrastructure  ← EF Core, repositories, event dispatch
+    ↑
+[Your Application Project]      ← references what it needs
 ```
 
-Each layer only depends on the layers inside it. A project using Dapper instead of EF Core can still use the Domain and Application packages.
+`Demarbit.Results` sits alongside as an independent package — use it as `TResponse` for commands and queries:
+
+```
+Demarbit.Results                ← zero deps (standalone)
+    ↑
+[Your Application Project]      ← ICommand<Result<Guid>>, IQuery<Result<OrderDto>>
+```
 
 ## License
 
