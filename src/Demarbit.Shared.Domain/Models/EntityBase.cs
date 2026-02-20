@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using Demarbit.Shared.Domain.Contracts;
 
 namespace Demarbit.Shared.Domain.Models;
 
@@ -9,7 +10,7 @@ namespace Demarbit.Shared.Domain.Models;
 /// <typeparam name="TId">The identifier type (e.g. Guid, int, or a strongly-typed ID).</typeparam>
 [SuppressMessage("SonarAnalyzer.CSharp", "S4035", 
     Justification = "Abstract DDD base type — equality is by identity/components and includes type checks.")]
-public abstract class EntityBase<TId> : IEquatable<EntityBase<TId>>
+public abstract class EntityBase<TId> : IEquatable<EntityBase<TId>>, IAuditableEntity
     where TId : notnull, IEquatable<TId>
 {
     /// <summary>
@@ -17,30 +18,19 @@ public abstract class EntityBase<TId> : IEquatable<EntityBase<TId>>
     /// </summary>
     public TId Id { get; protected set; } = default!;
 
-    /// <summary>
-    /// When this entity was created (UTC).
-    /// </summary>
+    /// <inheritdoc/>
     public DateTime CreatedAt { get; private set; }
 
-    /// <summary>
-    /// When this entity was last updated (UTC).
-    /// </summary>
+    /// <inheritdoc/>
     public DateTime UpdatedAt { get; private set; }
 
-    /// <summary>
-    /// The ID of the user who created this entity, if applicable.
-    /// </summary>
+    /// <inheritdoc/>
     public Guid? CreatedBy { get; private set; }
 
-    /// <summary>
-    /// The ID of the user who last updated this entity, if applicable.
-    /// </summary>
+    /// <inheritdoc/>
     public Guid? UpdatedBy { get; private set; }
 
-    /// <summary>
-    /// Sets the creation audit fields. Typically called from the entity's constructor
-    /// or a factory method.
-    /// </summary>
+    /// <inheritdoc/>
     public void SetCreated(DateTime createdAtUtc, Guid? createdBy = null)
     {
         CreatedAt = createdAtUtc;
@@ -49,10 +39,7 @@ public abstract class EntityBase<TId> : IEquatable<EntityBase<TId>>
         UpdatedBy = createdBy;
     }
 
-    /// <summary>
-    /// Sets the update audit fields. Typically called from command handlers
-    /// or domain methods that modify the entity.
-    /// </summary>
+    /// <inheritdoc/>
     public void SetUpdated(DateTime updatedAtUtc, Guid? updatedBy = null)
     {
         UpdatedAt = updatedAtUtc;
