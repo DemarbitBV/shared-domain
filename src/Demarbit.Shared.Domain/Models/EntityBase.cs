@@ -59,6 +59,7 @@ public abstract class EntityBase<TId> : IEquatable<EntityBase<TId>>
         UpdatedBy = updatedBy;
     }
 
+    /// <inheritdoc/>
     public bool Equals(EntityBase<TId>? other)
     {
         if (other is null) return false;
@@ -67,13 +68,27 @@ public abstract class EntityBase<TId> : IEquatable<EntityBase<TId>>
         return Id.Equals(other.Id);
     }
 
+    /// <inheritdoc/>
     public override bool Equals(object? obj) => Equals(obj as EntityBase<TId>);
 
+    /// <inheritdoc/>
     public override int GetHashCode() => Id.GetHashCode();
 
+    /// <summary>
+    /// Equality operator
+    /// </summary>
+    /// <param name="left"></param>
+    /// <param name="right"></param>
+    /// <returns></returns>
     public static bool operator ==(EntityBase<TId>? left, EntityBase<TId>? right)
         => Equals(left, right);
 
+    /// <summary>
+    /// Inequality operator
+    /// </summary>
+    /// <param name="left"></param>
+    /// <param name="right"></param>
+    /// <returns></returns>
     public static bool operator !=(EntityBase<TId>? left, EntityBase<TId>? right)
         => !Equals(left, right);
 }
@@ -84,6 +99,9 @@ public abstract class EntityBase<TId> : IEquatable<EntityBase<TId>>
 /// </summary>
 public abstract class EntityBase : EntityBase<Guid>
 {
+    /// <summary>
+    /// 
+    /// </summary>
     protected EntityBase()
     {
         Id = Guid.NewGuid();

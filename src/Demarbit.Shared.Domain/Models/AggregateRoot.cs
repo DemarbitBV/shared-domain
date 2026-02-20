@@ -42,6 +42,9 @@ public abstract class AggregateRoot<TId> : EntityBase<TId>
 /// </summary>
 public abstract class AggregateRoot : AggregateRoot<Guid>
 {
+    /// <summary>
+    /// 
+    /// </summary>
     protected AggregateRoot()
     {
         Id = Guid.NewGuid();

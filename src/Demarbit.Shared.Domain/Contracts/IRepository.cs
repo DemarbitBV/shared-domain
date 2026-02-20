@@ -13,17 +13,75 @@ public interface IRepository<T, in TId>
     where T : AggregateRoot<TId>
     where TId : notnull, IEquatable<TId>
 {
+    /// <summary>
+    /// Returns an record by it's ID or null if not found.
+    /// </summary>
+    /// <param name="id"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
     Task<T?> GetByIdAsync(TId id, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Get all available records
+    /// </summary>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
     Task<List<T>> GetAllAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Adds a new record
+    /// </summary>
+    /// <param name="aggregateRoot"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
     Task AddAsync(T aggregateRoot, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Adds multiple records at once
+    /// </summary>
+    /// <param name="aggregateRoots"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
     Task AddRangeAsync(IEnumerable<T> aggregateRoots, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Update a record
+    /// </summary>
+    /// <param name="aggregateRoot"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
     Task UpdateAsync(T aggregateRoot, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Updates multiple records at once
+    /// </summary>
+    /// <param name="aggregateRoots"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
     Task UpdateRangeAsync(IEnumerable<T> aggregateRoots, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Removes a record
+    /// </summary>
+    /// <param name="aggregateRoot"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
     Task RemoveAsync(T aggregateRoot, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Removes multiple records at once
+    /// </summary>
+    /// <param name="aggregateRoots"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
     Task RemoveRangeAsync(IEnumerable<T> aggregateRoots, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Removes a record by it's ID
+    /// </summary>
+    /// <param name="id"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
     Task RemoveByIdAsync(TId id, CancellationToken cancellationToken = default);
 }
 

@@ -11,22 +11,42 @@ public class DomainException : Exception
     /// </summary>
     public string? ErrorCode { get; }
 
+    /// <summary>
+    /// Creates a new instance of the <see cref="DomainException" /> class
+    /// </summary>
+    /// <param name="message"></param>
     public DomainException(string message)
         : base(message)
     {
     }
 
+    /// <summary>
+    /// Creates a new instance of the <see cref="DomainException" /> class
+    /// </summary>
+    /// <param name="message"></param>
+    /// <param name="errorCode"></param>
     public DomainException(string message, string errorCode)
         : base(message)
     {
         ErrorCode = errorCode;
     }
 
+    /// <summary>
+    /// Creates a new instance of the <see cref="DomainException" /> class
+    /// </summary>
+    /// <param name="message"></param>
+    /// <param name="innerException"></param>
     public DomainException(string message, Exception innerException)
         : base(message, innerException)
     {
     }
 
+    /// <summary>
+    /// Creates a new instance of the <see cref="DomainException" /> class
+    /// </summary>
+    /// <param name="message"></param>
+    /// <param name="errorCode"></param>
+    /// <param name="innerException"></param>
     public DomainException(string message, string errorCode, Exception innerException)
         : base(message, innerException)
     {

@@ -38,6 +38,7 @@ public abstract class ValueObject : IEquatable<ValueObject>
     /// </summary>
     protected abstract IEnumerable<object?> GetEqualityComponents();
 
+    /// <inheritdoc/>
     public bool Equals(ValueObject? other)
     {
         if (other is null) return false;
@@ -47,14 +48,22 @@ public abstract class ValueObject : IEquatable<ValueObject>
         return GetEqualityComponents().SequenceEqual(other.GetEqualityComponents());
     }
 
+    /// <inheritdoc/>
     public override bool Equals(object? obj) => Equals(obj as ValueObject);
 
+    /// <inheritdoc/>
     public override int GetHashCode()
     {
         return GetEqualityComponents()
             .Aggregate(17, (hash, component) => hash * 31 + (component?.GetHashCode() ?? 0));
     }
 
+    /// <summary>
+    /// Equality operator
+    /// </summary>
+    /// <param name="left"></param>
+    /// <param name="right"></param>
+    /// <returns></returns>
     public static bool operator ==(ValueObject? left, ValueObject? right)
     {
         if (left is null && right is null) return true;
@@ -62,6 +71,12 @@ public abstract class ValueObject : IEquatable<ValueObject>
         return left.Equals(right);
     }
 
+    /// <summary>
+    /// Inequality operator
+    /// </summary>
+    /// <param name="left"></param>
+    /// <param name="right"></param>
+    /// <returns></returns>
     public static bool operator !=(ValueObject? left, ValueObject? right)
         => !(left == right);
 }
