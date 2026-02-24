@@ -7,7 +7,7 @@ namespace Demarbit.Shared.Domain.Models;
 /// Provides domain event collection and dequeuing for the unit of work / event dispatcher.
 /// </summary>
 /// <typeparam name="TId">The identifier type (e.g. Guid, int, or a strongly-typed ID).</typeparam>
-public abstract class AggregateRoot<TId> : EntityBase<TId>
+public abstract class AggregateRoot<TId> : EntityBase<TId>, IAggregateRoot
     where TId : notnull, IEquatable<TId>
 {
     private readonly List<IDomainEvent> _domainEvents = [];
