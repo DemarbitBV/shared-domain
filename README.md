@@ -8,226 +8,215 @@ Shared domain building blocks for DDD and Clean Architecture in .NET — entitie
 
 ## What's Included
 
-**Dispatching** — A lightweight in-process dispatcher with `ICommand<TResponse>`, `IQuery<TResponse>`, single `IRequestHandler<TRequest, TResponse>`, and domain event notification via `IEventHandler<TEvent>`. No void handler track, no `Unit` type — every request returns a response.
+**Entities and Aggregates** — `EntityBase<TId>` and `AggregateRoot<TId>` base classes with identity, equality-by-ID, built-in audit fields, and domain event collection. Guid convenience aliases (`EntityBase`, `AggregateRoot`) auto-generate IDs.
 
-**Pipeline behaviors** — `IPipelineBehavior<TRequest, TResponse>` with built-in logging, transaction, and validation behaviors. Public interface so consumers can add their own (caching, authorization, rate limiting, etc.).
+**Value Objects** — `ValueObject` base class with structural equality. Subclasses define equality through `GetEqualityComponents()`.
 
-**Validation** — Async `IValidator<T>` with structured `ValidationError` results (property name, message, error code). Supports database lookups and external service checks.
+**Domain Events** — `IDomainEvent` contract and `DomainEventBase` record with auto-generated metadata (`EventId`, `OccurredOn`, `EventType`, `Version`). Supports `with` expressions for deterministic testing.
 
-**Exceptions** — Consistent `AppException` hierarchy: `ConflictException`, `ForbiddenException`, `NotFoundException`, and `ValidationFailedException` all extend a single base. One catch filter handles them all.
+**Contracts** — `IRepository<T, TId>`, `IUnitOfWork`, `IAuditableEntity`, `IAggregateRoot`, `ICurrentUserProvider`, `ICurrentTenantProvider`, `ITenantEntity`, and `IEventIdempotencyService`. Pure abstractions — no infrastructure dependencies.
 
-**Models** — `Optional<T>` for PATCH semantics, `PagedResult<T>` with pagination helpers, `ValidationError`, and `SortDirection`.
+**Guards** — Static `Guard` class for argument validation and domain invariants. Uses `[CallerArgumentExpression]` to capture parameter names automatically.
+
+**Exceptions** — `DomainException` for domain rule violations with an optional `ErrorCode` for structured error handling.
+
+**Extensions** — `ToSlug()` string extension for URL-friendly slug generation with diacritics removal.
 
 ## Quick Start
 
-### Commands and Queries
+### Entities
 
-Commands represent intent to change state. Queries represent intent to read. Both return a response — pair with `Demarbit.Results` for a natural fit, or use any type.
-
-```csharp
-// With Demarbit.Results
-public record CreateOrder(string CustomerName) : ICommand<Result>;
-public record GetOrder(Guid Id) : IQuery<Result>;
-public record DeleteOrder(Guid Id) : ICommand;
-
-// Without Results — any return type works
-public record CreateOrder(string CustomerName) : ICommand;
-public record GetOrder(Guid Id) : IQuery;
-```
-
-### Request Handlers
-
-One handler interface for all requests. No separate void handler.
+Inherit from `EntityBase` (Guid ID) or `EntityBase<TId>` (custom ID type). Audit fields and equality come built in.
 
 ```csharp
-public class CreateOrderHandler : IRequestHandler>
+public class Customer : EntityBase
 {
-    public async Task<Result> HandleAsync(CreateOrder request, CancellationToken ct)
+    public string Name { get; private set; }
+
+    public Customer(string name)
     {
-        var order = new Order(request.CustomerName);
-        await _repository.AddAsync(order, ct);
-        return Result.Success(order.Id);
+        Guard.NotNullOrWhiteSpace(name);
+        Name = name;
     }
 }
 ```
 
-### Dispatching
+### Aggregate Roots
 
-Send commands/queries and notify domain events through `IDispatcher`:
-
-```csharp
-// Send a command or query
-var result = await dispatcher.SendAsync(new CreateOrder("Acme Corp"), ct);
-
-// Notify domain events after saving
-await dispatcher.NotifyAsync(order.DequeueDomainEvents(), ct);
-```
-
-### Validation
-
-Validators are async and return structured errors:
+Inherit from `AggregateRoot` to get domain event support on top of entity features. Raise events inside domain methods — they queue until the unit of work dispatches them.
 
 ```csharp
-public class CreateOrderValidator : IValidator
+public class Order : AggregateRoot
 {
-    public async Task<IEnumerable> ValidateAsync(CreateOrder request, CancellationToken ct)
+    public string CustomerName { get; private set; }
+    public OrderStatus Status { get; private set; }
+
+    public Order(string customerName)
     {
-        var errors = new List();
+        Guard.NotNullOrWhiteSpace(customerName);
+        CustomerName = customerName;
+        Status = OrderStatus.Placed;
+        RaiseDomainEvent(new OrderPlaced { OrderId = Id });
+    }
 
-        if (string.IsNullOrWhiteSpace(request.CustomerName))
-            errors.Add(new ValidationError(nameof(request.CustomerName), "Customer name is required."));
-
-        if (await _customers.ExistsAsync(request.CustomerName, ct) is false)
-            errors.Add(new ValidationError(nameof(request.CustomerName), "Customer not found.", "CUSTOMER_NOT_FOUND"));
-
-        return errors;
+    public void Cancel()
+    {
+        Guard.Against(Status == OrderStatus.Shipped, "Cannot cancel a shipped order.");
+        Status = OrderStatus.Cancelled;
+        RaiseDomainEvent(new OrderCancelled { OrderId = Id });
     }
 }
 ```
 
-The `ValidationBehavior` runs all registered validators before the handler executes and throws `ValidationFailedException` with the collected errors.
+### Domain Events
 
-### Pipeline Behaviors
-
-Behaviors wrap every request in a pipeline. Three are included out of the box:
-
-```
-ValidationBehavior  →  LoggingBehavior  →  TransactionBehavior  →  Handler
-```
-
-- **ValidationBehavior** — runs all `IValidator<TRequest>` implementations, throws `ValidationFailedException` on failure.
-- **LoggingBehavior** — logs request/response timing. Only logs unexpected exceptions (not `AppException` subtypes).
-- **TransactionBehavior** — wraps commands in a `IUnitOfWork.SaveChangesAsync` call. Triggered by the `ITransactional` marker on `ICommand<T>` — no runtime reflection.
-
-Add your own:
+Use `DomainEventBase` as a record base. Metadata is auto-generated — override with `with` for testing.
 
 ```csharp
-public class CachingBehavior : IPipelineBehavior
-    where TRequest : IQuery
+public sealed record OrderPlaced : DomainEventBase
 {
-    public async Task HandleAsync(
-        TRequest request,
-        RequestHandlerDelegate next,
-        CancellationToken ct)
-    {
-        var cached = await _cache.GetAsync(request);
-        if (cached is not null) return cached;
+    public Guid OrderId { get; init; }
+}
 
-        var response = await next();
-        await _cache.SetAsync(request, response);
-        return response;
+// In a test with deterministic time:
+var evt = new OrderPlaced { OrderId = id } with { OccurredOn = fixedTime };
+```
+
+### Value Objects
+
+Subclass `ValueObject` and implement `GetEqualityComponents()`. Two value objects are equal when all components match.
+
+```csharp
+public class Money : ValueObject
+{
+    public decimal Amount { get; }
+    public string Currency { get; }
+
+    public Money(decimal amount, string currency)
+    {
+        Guard.GreaterThanOrEqualTo(amount, 0m, "Amount cannot be negative.");
+        Guard.NotNullOrWhiteSpace(currency);
+        Amount = amount;
+        Currency = currency;
+    }
+
+    protected override IEnumerable<object?> GetEqualityComponents()
+    {
+        yield return Amount;
+        yield return Currency;
     }
 }
 ```
 
-### Exceptions
+### Guard Clauses
 
-All application exceptions share a single base class:
+Validate arguments and enforce domain invariants. Parameter names are captured automatically.
 
 ```csharp
-try { ... }
-catch (AppException ex)
+Guard.NotNull(customer);                              // throws ArgumentNullException
+Guard.NotNullOrWhiteSpace(name);                      // throws ArgumentException
+Guard.Against(age < 0, "Age cannot be negative.");    // throws ArgumentException
+Guard.Between(quantity, 1, 100, "Quantity out of range.");
+Guard.MustBe(email, e => e.Contains('@'), "Invalid email.");
+Guard.NotEmpty(lineItems);                            // throws on null or empty collection
+```
+
+### Repository Contract
+
+Define aggregate-specific repositories by extending `IRepository<T>` (Guid) or `IRepository<T, TId>` (custom ID):
+
+```csharp
+public interface IOrderRepository : IRepository<Order>
 {
-    // Catches ConflictException, ForbiddenException, NotFoundException,
-    // ValidationFailedException — one filter, no enumeration needed.
+    Task<List<Order>> GetByCustomerAsync(string customerName, CancellationToken ct = default);
 }
 ```
 
-`ValidationFailedException` carries structured error details:
+The base interface provides `GetByIdAsync`, `GetAllAsync`, `AddAsync`, `AddRangeAsync`, `UpdateAsync`, `UpdateRangeAsync`, `RemoveAsync`, `RemoveRangeAsync`, and `RemoveByIdAsync`.
+
+### Unit of Work
+
+`IUnitOfWork` coordinates transactional persistence and domain event collection:
 
 ```csharp
-catch (ValidationFailedException ex)
+await unitOfWork.BeginTransactionAsync(ct);
+await orderRepository.AddAsync(order, ct);
+await unitOfWork.SaveChangesAsync(ct);
+var events = unitOfWork.GetAndClearPendingEvents();
+await unitOfWork.CommitTransactionAsync(ct);
+
+// Dispatch events after commit
+await dispatcher.NotifyAsync(events, ct);
+```
+
+### Multi-Tenancy
+
+Mark aggregates or entities with `ITenantEntity` and resolve the current tenant with `ICurrentTenantProvider`:
+
+```csharp
+public class Project : AggregateRoot, ITenantEntity
 {
-    foreach (var error in ex.Errors)
+    public Guid TenantId { get; private set; }
+
+    public Project(Guid tenantId, string name)
     {
-        Console.WriteLine($"{error.PropertyName}: {error.ErrorMessage} ({error.ErrorCode})");
+        TenantId = tenantId;
+        Name = name;
     }
 }
 ```
 
-### Optional for PATCH Semantics
+### Domain Exceptions
 
-`Optional<T>` distinguishes "field absent" from "field explicitly set to null" in partial updates:
+Throw `DomainException` for domain rule violations. The optional `ErrorCode` enables structured error mapping:
 
 ```csharp
-public record UpdateCustomer(
-    Guid Id,
-    Optional Name,        // absent = don't change, Some(value) = update
-    Optional PhoneNumber  // absent = don't change, Some(null) = clear
-) : ICommand;
+throw new DomainException("Order has already been shipped.");
+throw new DomainException("Insufficient stock.", "INSUFFICIENT_STOCK");
 ```
 
-JSON serialization is handled by the included `OptionalJsonConverterFactory`.
+### Event Idempotency
 
-### Event Handlers
-
-Handle domain events dispatched after persistence:
+`IEventIdempotencyService` and `ProcessedEvent` prevent duplicate event handling:
 
 ```csharp
-public class OrderCreatedHandler : IEventHandler
-{
-    public async Task HandleAsync(OrderCreatedEvent @event, CancellationToken ct)
-    {
-        await _emailService.SendOrderConfirmationAsync(@event.OrderId, ct);
-    }
-}
+if (await idempotencyService.HasBeenProcessedAsync(evt.EventId, nameof(MyHandler), ct))
+    return;
+
+// Handle the event...
+
+await idempotencyService.MarkAsProcessedAsync(evt.EventId, evt.EventType, nameof(MyHandler), ct);
 ```
 
-Event dispatching uses cached typed invokers — no reflection at runtime.
+### Slug Generation
 
-### Scope Context Propagation
-
-Event handlers run in their own DI scope. To propagate ambient context (user ID, tenant, correlation ID), implement `IScopeContextPropagator`:
+Convert strings to URL-friendly slugs with diacritics removal:
 
 ```csharp
-public class SessionContextPropagator : IScopeContextPropagator
-{
-    public void PropagateToScope(IServiceProvider sourceScope, IServiceProvider targetScope)
-    {
-        var source = sourceScope.GetRequiredService();
-        var target = targetScope.GetRequiredService();
-        target.UserId = source.UserId;
-        target.TenantId = source.TenantId;
-    }
-}
-```
-
-Register it in DI — the dispatcher picks it up automatically. If none is registered, no propagation occurs.
-
-### Registration
-
-One call wires up the dispatcher, behaviors, and all handlers/validators in the given assemblies:
-
-```csharp
-services.AddSharedApplication(typeof(CreateOrderHandler).Assembly);
+"Café au Lait".ToSlug()   // "cafe-au-lait"
+"Hello World!".ToSlug()   // "hello-world"
+"Ürban Köln".ToSlug()     // "urban-koln"
 ```
 
 ## Design Principles
 
-- **Single handler track** — every request returns a response. No `Unit`, no void handlers, no parallel interface hierarchies. This cuts dispatching complexity by ~30%.
-- **Consistent exception base** — all application exceptions extend `AppException`. One catch filter handles all expected failures.
-- **No infrastructure dependencies** — depends only on `Demarbit.Shared.Domain`, `M.E.DependencyInjection.Abstractions`, and `M.E.Logging.Abstractions`. No EF Core, no HTTP, no third-party packages.
-- **Extensible pipeline** — `IPipelineBehavior` is public. Consumers add behaviors without forking the library.
-- **Results-ready, not Results-required** — designed to pair naturally with `Demarbit.Results` but works with any return type.
+- **Zero dependencies** — depends only on the .NET base class library. No NuGet packages, no infrastructure concerns.
+- **Identity by ID** — entities use equality-by-ID semantics. Value objects use structural equality.
+- **Audit built in** — every entity tracks `CreatedAt`, `UpdatedAt`, `CreatedBy`, `UpdatedBy` through `IAuditableEntity`.
+- **Events stay in the domain** — aggregates raise events, the unit of work collects them, infrastructure dispatches them. The domain layer never depends on the dispatcher.
+- **Pure contracts** — `IRepository`, `IUnitOfWork`, and provider interfaces define what the domain needs without dictating how it's implemented.
+- **Guard clauses over exceptions in constructors** — `Guard` keeps validation expressive and consistent across the domain.
 
 ## Architecture Fit
 
 ```
-Demarbit.Shared.Domain          ← zero deps
+Demarbit.Shared.Domain          ← this package (zero deps)
     ↑
-Demarbit.Shared.Application     ← this package
+Demarbit.Shared.Application     ← dispatching, pipeline, validation
     ↑
 Demarbit.Shared.Infrastructure  ← EF Core, repositories, event dispatch
     ↑
 [Your Application Project]      ← references what it needs
-```
-
-`Demarbit.Results` sits alongside as an independent package — use it as `TResponse` for commands and queries:
-
-```
-Demarbit.Results                ← zero deps (standalone)
-    ↑
-[Your Application Project]      ← ICommand<Result<Guid>>, IQuery<Result<OrderDto>>
 ```
 
 ## License
